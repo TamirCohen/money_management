@@ -1,0 +1,10 @@
+node_modules
+dist
+*.local
+.DS_Store
+# never commit financial data
+data/
+*.xlsx
+*.xls
+*.csv
+expenses.config.json
