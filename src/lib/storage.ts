@@ -73,7 +73,7 @@ export async function savedFolder(): Promise<{ dir: Dir; granted: boolean } | nu
 
 export const grant = async (dir: Dir) => (await dir.requestPermission({ mode: 'readwrite' })) === 'granted'
 
-export async function parseAll(files: AsyncIterable<{ data: ArrayBuffer; path: string }> | { data: ArrayBuffer; path: string }[]): Promise<LoadResult> {
+async function parseAll(files: AsyncIterable<{ data: ArrayBuffer; path: string }> | { data: ArrayBuffer; path: string }[]): Promise<LoadResult> {
   const lists: Transaction[][] = []
   const warnings: string[] = []
   const infos: FileInfo[] = []

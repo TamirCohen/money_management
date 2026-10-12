@@ -189,7 +189,6 @@ input[type='color']::-webkit-color-swatch { border: 0; border-radius: 50%; }
 .tip-val { margin-left: auto; padding-left: 12px; color: var(--text-1); }
 .chip.dim { opacity: 0.45; }
 .chip-sep { width: 1px; background: var(--border); margin: 2px 4px; }
-.landing-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 420px; }
 tr.excluded td:not(.cat-cell) { opacity: 0.45; }
 tr.excluded td.num { text-decoration: line-through; }
 .excluded-row .bar-label { color: var(--text-3); }

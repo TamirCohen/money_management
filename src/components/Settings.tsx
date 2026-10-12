@@ -12,7 +12,7 @@ interface Props {
   setConfig: (fn: (c: Config) => Config) => void
   data: LoadResult
   sourceName: string
-  /** Forget the current folder and pick another (local or Google Drive) */
+  /** Forget the current folder and pick another */
   onSwitchSource?: () => void
 }
 

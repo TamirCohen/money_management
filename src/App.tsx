@@ -3,7 +3,6 @@ import { buildModel } from './lib/analytics.ts'
 import { UNCATEGORIZED, merchantKey } from './lib/categories.ts'
 import { normalizeConfig, seedConfig } from './lib/config.ts'
 import { href, useRoute } from './lib/route.ts'
-import { DRIVE_CLIENT_ID, cachedToken, driveSource, folderName, forgetDriveFolder, loadGis, parseFolderId, savedDriveFolder, signIn } from './lib/drive.ts'
 import { CONFIG_FILE, devSource, folderSource, forgetFolder, folderSupported, grant, pickFolder, savedFolder, type Dir, type LoadResult, type Source } from './lib/storage.ts'
 import type { Category, Config, Transaction } from './lib/types.ts'
 import { Home } from './components/Home.tsx'
@@ -17,8 +16,6 @@ export default function App() {
   const route = useRoute()
   const [status, setStatus] = useState<'init' | 'empty' | 'grant' | 'loading' | 'ready' | 'unsupported' | 'badconfig'>('init')
   const [pending, setPending] = useState<Dir | null>(null)
-  /** Drive folder used last time, waiting for a click to sign in again */
-  const [driveFolder, setDriveFolder] = useState<string | null>(null)
   const [source, setSource] = useState<Source | null>(null)
   const [data, setData] = useState<LoadResult>({ transactions: [], warnings: [], files: [] })
   const [config, setConfigState] = useState<Config | null>(null)
@@ -52,39 +49,9 @@ export default function App() {
     }
   }, [])
 
-  /** From a click: Google sign-in (popup), then the saved folder or ask for its link. */
-  const connectDrive = useCallback(
-    async (saved: string | null) => {
-      try {
-        setError(null)
-        await signIn()
-        const id = saved ?? parseFolderId(prompt('Paste the link to the Google Drive folder with your statements') ?? '')
-        if (!id) return
-        setStatus('loading')
-        const name = await folderName(id)
-        await forgetFolder()
-        await open(driveSource(id, name))
-      } catch (e) {
-        setError((e as Error).message)
-        setStatus('empty')
-      }
-    },
-    [open],
-  )
-
   useEffect(() => {
     if (isDev) return void open(devSource())
-    const drive = DRIVE_CLIENT_ID ? savedDriveFolder() : null
-    if (DRIVE_CLIENT_ID) loadGis().catch(() => {})
-    if (drive) {
-      if (cachedToken()) folderName(drive).then((name) => open(driveSource(drive, name)), () => setStatus('empty'))
-      else {
-        setDriveFolder(drive)
-        setStatus('empty')
-      }
-      return
-    }
-    if (!folderSupported()) return setStatus(DRIVE_CLIENT_ID ? 'empty' : 'unsupported')
+    if (!folderSupported()) return setStatus('unsupported')
     savedFolder().then((s) => {
       if (!s) setStatus('empty')
       else if (s.granted) open(folderSource(s.dir))
@@ -164,26 +131,7 @@ export default function App() {
         {status === 'grant' && pending ? (
           <button className="primary lg" onClick={async () => (await grant(pending)) && open(folderSource(pending))}>{Icon.folder} Open {pending.name}</button>
         ) : status === 'empty' ? (
-          <div className="landing-actions">
-            {DRIVE_CLIENT_ID && (
-              <button className="primary lg" onClick={() => connectDrive(driveFolder)}>
-                {Icon.drive} {driveFolder ? 'Open Google Drive folder' : 'Connect Google Drive'}
-              </button>
-            )}
-            {folderSupported() && (
-              <button
-                className={DRIVE_CLIENT_ID ? 'ghost' : 'primary lg'}
-                onClick={async () => {
-                  const dir = await pickFolder()
-                  forgetDriveFolder()
-                  open(folderSource(dir))
-                }}
-              >
-                {Icon.folder} {DRIVE_CLIENT_ID ? 'Use a local folder instead' : 'Choose statements folder'}
-              </button>
-            )}
-            {error && <div className="warnings">{error}</div>}
-          </div>
+          <button className="primary lg" onClick={async () => open(folderSource(await pickFolder()))}>{Icon.folder} Choose statements folder</button>
         ) : status === 'badconfig' && source ? (
           <>
             <div className="warnings">{error}</div>
@@ -234,7 +182,6 @@ export default function App() {
                 ? undefined
                 : async () => {
                     await forgetFolder()
-                    forgetDriveFolder()
                     location.hash = '#/'
                     location.reload()
                   }
