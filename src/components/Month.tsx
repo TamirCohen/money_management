@@ -80,6 +80,11 @@ export function Month({ model, month, category, categories, catOf, onAssign, onA
         <div className="month-total">
           <div className="big-num">{ils(total)}</div>
           {others.length > 0 && <div className={`small ${total > avg ? 'bad' : 'good'}`}>{pct((total - avg) / (avg || 1))} vs avg {ils(avg)}</div>}
+          {model.income[month] > 0 && (
+            <div className={`small saved ${model.income[month] - total < 0 ? 'bad' : 'good'}`} title={`Income ${ils(model.income[month])} − spent ${ils(total)}`}>
+              Saved {ils(model.income[month] - total)}
+            </div>
+          )}
         </div>
       </div>
 

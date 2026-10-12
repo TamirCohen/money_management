@@ -200,3 +200,4 @@ tr.excluded td.num { text-decoration: line-through; }
 .chip.stepper .step { color: var(--text-3); padding: 5px 8px; }
 .chip.stepper .step:hover:not(:disabled) { color: var(--text-1); background: var(--hover); }
 .chip.stepper .step:disabled { opacity: 0.3; cursor: default; }
+.saved { font-weight: 600; margin-top: 2px; }

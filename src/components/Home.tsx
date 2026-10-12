@@ -47,7 +47,9 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
   const recurringMonthly = model.recurring.reduce((s, r) => s + r.monthly, 0)
   const withIncome = months.filter((m) => income[m] > 0)
   const incomeSum = withIncome.reduce((s, m) => s + income[m], 0)
-  const savingsRate = incomeSum ? withIncome.reduce((s, m) => s + income[m] - totals[m], 0) / incomeSum : null
+  // Only months with income count, so a salary added from some month on doesn't skew the average
+  const savedSum = withIncome.reduce((s, m) => s + income[m] - totals[m], 0)
+  const savedAvg = withIncome.length ? savedSum / withIncome.length : null
   const netWorth = config.assets.reduce((s, a) => s + a.value, 0)
 
   // Top mode: each month keeps its own 5 biggest categories; the rest is one grey segment
@@ -84,7 +86,7 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
       <div className="stats">
         <Stat label="Average month" value={ils(avgAll)} sub={`${months.length} months`} />
         <Stat label="Recurring" value={ils(recurringMonthly)} sub="per month" />
-        {savingsRate != null && <Stat label="Savings rate" value={`${Math.round(savingsRate * 100)}%`} tone={savingsRate < 0 ? 'bad' : 'good'} sub="of income" />}
+        {savedAvg != null && <Stat label="Saved per month" value={ils(savedAvg)} tone={savedAvg < 0 ? 'bad' : 'good'} sub={`${Math.round((savedSum / incomeSum) * 100)}% of income`} />}
         {netWorth > 0 && <Stat label="Net worth" value={ils(netWorth)} sub={avgAll ? `${(netWorth / avgAll).toFixed(0)} months of spending` : undefined} />}
       </div>
 
