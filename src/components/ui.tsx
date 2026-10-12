@@ -63,6 +63,12 @@ export const Icon = {
       <path d="M5.5 2h5l4 7-2.5 4.5h-8L1.5 9zM5.5 2l5 9M10.5 2 5.5 11M1.5 9h11" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
     </svg>
   ),
+  eyeOff: (
+    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden>
+      <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4zM2.5 2.5l11 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="1.8" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  ),
   gear: (
     <svg viewBox="0 0 16 16" width="16" height="16" aria-label="Settings" role="img">
       <circle cx="8" cy="8" r="2.2" fill="none" stroke="currentColor" strokeWidth="1.4" />

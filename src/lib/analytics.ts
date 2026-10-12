@@ -5,8 +5,11 @@ import type { Config, Rule, Transaction } from './types.ts'
 export interface Tx extends Transaction {
   month: string
   category: string
-  /** The rule that set the category (null = manual item or uncategorized) */
+  /** The rule that set the category (null = manual item, per-transaction override or uncategorized) */
   rule: Rule | null
+  override: boolean
+  /** In a not-counted category: listed, but left out of every total */
+  excluded: boolean
   key: string
   recurring: boolean
 }
@@ -137,71 +140,16 @@ function detectRecurring(txs: Tx[], config: Config): RecurringItem[] {
   return out.sort((a, b) => b.monthly - a.monthly)
 }
 
-export interface Trip {
-  id: string
-  start: string
-  end: string
-  days: number
-  total: number
-  currency: string
-  txs: Tx[]
-}
-
-const CURRENCY_PLACE: Record<string, string> = { Ft: 'Hungary', $: 'USD', '€': 'Euro', '£': 'UK', 'CHF': 'Switzerland', 'Kč': 'Czechia', 'zł': 'Poland' }
-export const placeOf = (currency: string) => CURRENCY_PLACE[currency] ?? currency
-
-/** Cluster in-person foreign charges that are close in time into trips. */
-function detectTrips(txs: Tx[]): Trip[] {
-  const abroad = txs
-    .filter((t) => t.abroad || (t.originalCurrency !== '₪' && t.category === 'travel'))
-    .sort((a, b) => a.date.localeCompare(b.date))
-  const trips: Trip[] = []
-  let cur: Tx[] = []
-  const flush = () => {
-    if (cur.length >= 3) {
-      const start = cur[0].date
-      const end = cur[cur.length - 1].date
-      // Domestic charges inside the window (airport, travel insurance) belong to the trip too
-      const window = txs.filter((t) => t.date >= addDays(start, -2) && t.date <= end && t.category === 'travel' && !cur.includes(t))
-      const all = [...cur, ...window].sort((a, b) => a.date.localeCompare(b.date))
-      const counts = new Map<string, number>()
-      for (const t of cur) counts.set(t.originalCurrency, (counts.get(t.originalCurrency) ?? 0) + 1)
-      const currency = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-      trips.push({
-        id: `${start}-${currency}`,
-        start: all[0].date,
-        end,
-        days: Math.round((Date.parse(end) - Date.parse(all[0].date)) / 864e5) + 1,
-        total: all.reduce((s, t) => s + t.amount, 0),
-        currency,
-        txs: all,
-      })
-    }
-    cur = []
-  }
-  for (const t of abroad) {
-    if (cur.length && Date.parse(t.date) - Date.parse(cur[cur.length - 1].date) > 4 * 864e5) flush()
-    cur.push(t)
-  }
-  flush()
-  return trips.reverse()
-}
-
-function addDays(iso: string, n: number) {
-  const d = new Date(iso)
-  d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
 export interface Model {
   txs: Tx[]
   months: string[]
   totals: Record<string, number>
   fixed: Record<string, number>
   byCategory: Record<string, Record<string, number>>
+  /** Sum of not-counted transactions per month (shown, never added to totals) */
+  excludedTotals: Record<string, number>
   income: Record<string, number>
   recurring: RecurringItem[]
-  trips: Trip[]
   /** Unusually large charges vs the category's typical charge */
   outliers: Set<string>
 }
@@ -214,19 +162,25 @@ export function buildModel(raw: Transaction[], config: Config): Model {
   const all = [...raw, ...expandManual(config, months)]
 
   const pre: Tx[] = all.map((t) => ({ ...t, month: monthOf(t, basis), ...categorize(t), key: merchantKey(t.merchant), recurring: false }))
-  const recurring = detectRecurring(pre, config)
+  const recurring = detectRecurring(pre.filter((t) => !t.excluded), config)
   const recurringKeys = new Set(recurring.map((r) => r.key))
   const txs = pre.map((t) => ({ ...t, recurring: recurringKeys.has(t.key) })).sort((a, b) => b.date.localeCompare(a.date))
 
   const totals: Record<string, number> = {}
   const fixed: Record<string, number> = {}
   const byCategory: Record<string, Record<string, number>> = {}
+  const excludedTotals: Record<string, number> = {}
   for (const m of months) {
     totals[m] = 0
+    excludedTotals[m] = 0
     fixed[m] = 0
     byCategory[m] = {}
   }
   for (const t of txs) {
+    if (t.excluded) {
+      excludedTotals[t.month] += t.amount
+      continue
+    }
     totals[t.month] += t.amount
     if (t.recurring) fixed[t.month] += t.amount
     byCategory[t.month][t.category] = (byCategory[t.month][t.category] ?? 0) + t.amount
@@ -239,12 +193,12 @@ export function buildModel(raw: Transaction[], config: Config): Model {
 
   const outliers = new Set<string>()
   const perCat = new Map<string, number[]>()
-  for (const t of txs) if (!t.manual && t.amount > 0) perCat.set(t.category, [...(perCat.get(t.category) ?? []), t.amount])
+  for (const t of txs) if (!t.manual && !t.excluded && t.amount > 0) perCat.set(t.category, [...(perCat.get(t.category) ?? []), t.amount])
   for (const t of txs) {
-    if (t.manual || t.recurring || t.category === 'transfers') continue
+    if (t.manual || t.excluded || t.recurring || t.category === 'transfers') continue
     const med = median(perCat.get(t.category) ?? [])
     if (t.amount >= 400 && t.amount >= med * 5) outliers.add(t.id)
   }
 
-  return { txs, months, totals, fixed, byCategory, income, recurring, trips: detectTrips(txs), outliers }
+  return { txs, months, totals, fixed, byCategory, excludedTotals, income, recurring, outliers }
 }

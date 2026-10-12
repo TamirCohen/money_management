@@ -66,9 +66,9 @@ export function Settings({ model, config, setConfig, data, sourceName, onSwitchS
 
   const deleteCategory = (cid: string) => {
     const name = config.categories.find((c) => c.id === cid)?.name
-    const rules = config.rules.filter((r) => r.category === cid).length
+    const rules = config.rules.filter((r) => r.category === cid).length + config.transactionOverrides.filter((o) => o.category === cid).length
     if (!confirm(`Delete “${name}”?${rules ? ` Its ${rules} rule(s) will be removed too.` : ''}`)) return
-    setConfig((c) => ({ ...c, categories: c.categories.filter((x) => x.id !== cid), rules: c.rules.filter((r) => r.category !== cid) }))
+    setConfig((c) => ({ ...c, categories: c.categories.filter((x) => x.id !== cid), rules: c.rules.filter((r) => r.category !== cid), transactionOverrides: c.transactionOverrides.filter((o) => o.category !== cid) }))
   }
 
   const needle = ruleQ.trim().toLowerCase()
@@ -102,6 +102,12 @@ export function Settings({ model, config, setConfig, data, sourceName, onSwitchS
               <tr key={cat.id}>
                 <td className="w1"><input type="color" value={cat.color} onChange={(e) => setConfig((c) => ({ ...c, categories: c.categories.map((x) => (x.id === cat.id ? { ...x, color: e.target.value } : x)) }))} /></td>
                 <td><input className="plain" value={cat.name} onChange={(e) => setConfig((c) => ({ ...c, categories: c.categories.map((x) => (x.id === cat.id ? { ...x, name: e.target.value } : x)) }))} /></td>
+                <td className="w1">
+                  <label className="check small muted" title="Not counted in totals, charts or averages (still listed, greyed out)">
+                    <input type="checkbox" checked={!!cat.excluded} onChange={(e) => setConfig((c) => ({ ...c, categories: c.categories.map((x) => (x.id === cat.id ? { ...x, excluded: e.target.checked || undefined } : x)) }))} />
+                    not counted
+                  </label>
+                </td>
                 <td className="muted small num">{catCount.get(cat.id) ?? 0} transactions</td>
                 <td className="actions"><button className="ghost tiny" onClick={() => deleteCategory(cat.id)}>{Icon.x}</button></td>
               </tr>
@@ -148,6 +154,30 @@ export function Settings({ model, config, setConfig, data, sourceName, onSwitchS
           </tbody>
         </table>
       </section>
+
+      {config.transactionOverrides.length > 0 && (
+        <section className="card">
+          <h3>Single transactions</h3>
+          <p className="hint">Category set for one transaction only (“Just this one”). These win over rules.</p>
+          <table className="table">
+            <tbody>
+              {[...config.transactionOverrides].sort((a, b) => b.date.localeCompare(a.date)).map((o) => (
+                <tr key={o.id}>
+                  <td className="muted nowrap">{o.date}</td>
+                  <td className="merchant" dir="auto">{o.merchant}</td>
+                  <td className="num">{ils(o.amount, true)}</td>
+                  <td className="w1">
+                    <CategorySelect categories={config.categories} value={o.category} allowNew={false} onChange={(category) => setConfig((c) => ({ ...c, transactionOverrides: c.transactionOverrides.map((x) => (x.id === o.id ? { ...x, category } : x)) }))} />
+                  </td>
+                  <td className="actions">
+                    <button className="ghost tiny" title="Remove: back to the rules" onClick={() => setConfig((c) => ({ ...c, transactionOverrides: c.transactionOverrides.filter((x) => x.id !== o.id) }))}>{Icon.x}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="card">
         <div className="card-head">

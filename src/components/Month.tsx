@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
-import type { Model } from '../lib/analytics.ts'
+import type { Model, Tx } from '../lib/analytics.ts'
 import { ruleLabel } from '../lib/categories.ts'
 import { href } from '../lib/route.ts'
 import type { Category } from '../lib/types.ts'
@@ -12,15 +12,26 @@ interface Props {
   category: string | null
   categories: Category[]
   catOf: (id: string) => Category
+  /** Rule for every transaction from this merchant */
   onAssign: (merchant: string, category: string) => void
+  /** Category for this one transaction only */
+  onAssignOne: (t: Tx, category: string) => void
   onNewCategory: (name: string) => string
 }
 
 /** Pie slices beyond this many fold into one "rest" slice so colors stay distinguishable. */
 const MAX_SLICES = 7
 
-export function Month({ model, month, category, categories, catOf, onAssign, onNewCategory }: Props) {
+export function Month({ model, month, category, categories, catOf, onAssign, onAssignOne, onNewCategory }: Props) {
   const [q, setQ] = useState('')
+  /** A category was picked on a row whose merchant has other transactions: ask how widely to apply it */
+  const [pending, setPending] = useState<{ tx: Tx; category: string } | null>(null)
+  const perMerchant = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of model.txs) if (!t.manual) m.set(t.key, (m.get(t.key) ?? 0) + 1)
+    return m
+  }, [model.txs])
+  const excludedSum = model.excludedTotals[month] ?? 0
   const { months, totals, byCategory } = model
   const i = months.indexOf(month)
   const prev = months[i - 1]
@@ -43,17 +54,18 @@ export function Month({ model, month, category, categories, catOf, onAssign, onN
     const needle = q.trim().toLowerCase()
     return model.txs.filter((t) => t.month === month && (!category || t.category === category) && (!needle || t.key.includes(needle) || String(t.amount).includes(needle)))
   }, [model.txs, month, category, q])
-  const rowsSum = rows.reduce((s, t) => s + t.amount, 0)
+  const rowsSum = rows.reduce((s, t) => s + (t.excluded ? 0 : t.amount), 0)
 
   const filter = (id: string | null) => (location.hash = href.month(month, id === category ? null : id))
 
-  const assign = (merchant: string, id: string) => {
+  const assign = (t: Tx, id: string) => {
     if (id === NEW_CATEGORY) {
       const name = prompt('New category name')?.trim()
       if (!name) return
       id = onNewCategory(name)
     }
-    onAssign(merchant, id)
+    if ((perMerchant.get(t.key) ?? 0) > 1) setPending({ tx: t, category: id })
+    else onAssign(t.merchant, id)
   }
 
   return (
@@ -85,7 +97,8 @@ export function Month({ model, month, category, categories, catOf, onAssign, onN
           </ResponsiveContainer>
           <div className="donut-center">
             <div className="muted small">{category ? catOf(category).name : 'Total'}</div>
-            <div className="strong">{ils(category ? (byCategory[month]?.[category] ?? 0) : total)}</div>
+            <div className="strong">{ils(category ? (catOf(category).excluded ? model.txs.filter((t) => t.month === month && t.category === category).reduce((s, t) => s + t.amount, 0) : (byCategory[month]?.[category] ?? 0)) : total)}</div>
+            {category && catOf(category).excluded && <div className="muted small">not counted</div>}
           </div>
         </div>
 
@@ -98,6 +111,14 @@ export function Month({ model, month, category, categories, catOf, onAssign, onN
               <span className="bar-value">{ils(v)}</span>
             </button>
           ))}
+          {excludedSum !== 0 && (
+            <button className={`bar-row excluded-row ${category && !catOf(category).excluded ? 'dim' : ''}`} onClick={() => filter(categories.find((c) => c.excluded)?.id ?? null)} title="Not counted in any total">
+              <span className="bar-label">{Icon.eyeOff} Not counted</span>
+              <span />
+              <span />
+              <span className="bar-value">{ils(excludedSum)}</span>
+            </button>
+          )}
         </div>
       </section>
 
@@ -108,14 +129,14 @@ export function Month({ model, month, category, categories, catOf, onAssign, onN
               <Dot color={catOf(category).color} /> {catOf(category).name} {Icon.x}
             </button>
           )}
-          {category && <a className="ghost small" href={href.home([category])}>Over time {Icon.next}</a>}
+          {category && !catOf(category).excluded && <a className="ghost small" href={href.home([category])}>Over time {Icon.next}</a>}
           <input className="search" placeholder="Search" value={q} onChange={(e) => setQ(e.target.value)} />
           <span className="muted small nowrap">{rows.length} · <b className="strong">{ils(rowsSum)}</b></span>
         </div>
         <table className="table tx">
           <tbody>
             {rows.map((t) => (
-              <tr key={t.id} className={model.outliers.has(t.id) ? 'hl' : ''}>
+              <tr key={t.id} className={`${model.outliers.has(t.id) ? 'hl' : ''} ${t.excluded ? 'excluded' : ''}`}>
                 <td className="muted nowrap">{dayLabel(t.date)}</td>
                 <td>
                   <div className="merchant-cell">
@@ -130,8 +151,18 @@ export function Month({ model, month, category, categories, catOf, onAssign, onN
                 <td className="cat-cell">
                   {t.manual ? (
                     <span className="muted small">manual · {catOf(t.category).name}</span>
+                  ) : pending?.tx.id === t.id ? (
+                    <span className="apply-choice">
+                      <span className="muted small nowrap">{catOf(pending.category).name}:</span>
+                      <button className="ghost tiny" onClick={() => (onAssign(t.merchant, pending.category), setPending(null))}>All {perMerchant.get(t.key)} from this merchant</button>
+                      <button className="ghost tiny" onClick={() => (onAssignOne(t, pending.category), setPending(null))}>Just this one</button>
+                      <button className="ghost tiny" onClick={() => setPending(null)} aria-label="Cancel">{Icon.x}</button>
+                    </span>
                   ) : (
-                    <CategorySelect categories={categories} value={t.category} onChange={(id) => assign(t.merchant, id)} title={t.rule ? `Rule: ${ruleLabel(t.rule)}` : 'No rule matches'} />
+                    <span className="nowrap">
+                      {t.override && <span className="pill" title="Set for this transaction only (Settings → Single transactions)">this one</span>}
+                      <CategorySelect categories={categories} value={t.category} onChange={(id) => assign(t, id)} title={t.override ? 'Set for this transaction only' : t.rule ? `Rule: ${ruleLabel(t.rule)}` : 'No rule matches'} />
+                    </span>
                   )}
                 </td>
                 <td className={`num ${t.amount < 0 ? 'good' : ''}`}>{ils(t.amount, true)}</td>

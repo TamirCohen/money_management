@@ -1,7 +1,7 @@
 // Sanity-check parsing + categorization: node scripts/check.ts data/*.xlsx
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import { buildModel, placeOf } from '../src/lib/analytics.ts'
+import { buildModel } from '../src/lib/analytics.ts'
 import { seedConfig } from '../src/lib/config.ts'
 import { mergeTransactions, parseWorkbook } from '../src/lib/parsers/index.ts'
 
@@ -19,4 +19,3 @@ console.log('transactions', txs.length, 'rules', config.rules.length, `(${config
 console.table(Object.fromEntries(m.months.map((mo) => [mo, m.totals[mo].toFixed(2)])))
 console.log('uncategorized:', [...new Set(m.txs.filter((t) => t.category === 'uncategorized').map((t) => t.merchant))].join(' | '))
 for (const r of m.recurring) console.log('REC', r.merchant, r.category, 'every', r.cadence, 'monthly', r.monthly.toFixed(0))
-for (const t of m.trips) console.log('TRIP', placeOf(t.currency), t.start, t.end, t.total.toFixed(0))

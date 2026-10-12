@@ -14,7 +14,7 @@ export interface Transaction {
   originalCurrency: string
   /** Charged by a foreign merchant (online or in person) */
   foreign: boolean
-  /** Paid in person abroad (used to detect trips) */
+  /** Paid in person abroad */
   abroad: boolean
   standingOrder: boolean
   installment?: { n: number; of: number }
@@ -56,6 +56,17 @@ export interface Category {
   id: string
   name: string
   color: string
+  /** Not counted in totals/charts (money that comes back, transfers between your own accounts…) */
+  excluded?: boolean
+}
+
+/** Category set for one specific transaction, beating all rules. Merchant/date/amount are there to keep the file readable. */
+export interface TransactionOverride {
+  id: string
+  category: string
+  merchant: string
+  date: string
+  amount: number
 }
 
 export type MatchType = 'is' | 'contains' | 'matches'
@@ -106,6 +117,8 @@ export interface Config {
   monthBasis: MonthBasis
   categories: Category[]
   rules: Rule[]
+  /** One-off category changes for single transactions */
+  transactionOverrides: TransactionOverride[]
   manual: ManualItem[]
   income: IncomeItem[]
   assets: Asset[]

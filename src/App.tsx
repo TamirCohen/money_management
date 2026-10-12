@@ -5,7 +5,7 @@ import { normalizeConfig, seedConfig } from './lib/config.ts'
 import { href, useRoute } from './lib/route.ts'
 import { DRIVE_CLIENT_ID, cachedToken, driveSource, folderName, forgetDriveFolder, loadGis, parseFolderId, savedDriveFolder, signIn } from './lib/drive.ts'
 import { CONFIG_FILE, devSource, folderSource, forgetFolder, folderSupported, grant, pickFolder, savedFolder, type Dir, type LoadResult, type Source } from './lib/storage.ts'
-import type { Category, Config } from './lib/types.ts'
+import type { Category, Config, Transaction } from './lib/types.ts'
 import { Home } from './components/Home.tsx'
 import { Month } from './components/Month.tsx'
 import { Settings, newCategory } from './components/Settings.tsx'
@@ -144,6 +144,13 @@ export default function App() {
   const assign = (merchant: string, category: string) =>
     setConfig((c) => ({ ...c, rules: [{ match: 'is', value: merchant, category }, ...c.rules.filter((r) => !(r.match === 'is' && merchantKey(r.value) === merchantKey(merchant)))] }))
 
+  /** One transaction only: stored with merchant/date/amount so the config file stays readable. */
+  const assignOne = (t: Transaction, category: string) =>
+    setConfig((c) => ({
+      ...c,
+      transactionOverrides: [...c.transactionOverrides.filter((o) => o.id !== t.id), { id: t.id, category, merchant: t.merchant, date: t.date, amount: t.amount }],
+    }))
+
   const addCategory = (name: string) => {
     const made = newCategory(config!, name)
     setConfig(() => made.config)
@@ -236,9 +243,9 @@ export default function App() {
         ) : !model.months.length ? (
           <div className="empty">No statements found in {source.name}</div>
         ) : month && route.page === 'month' ? (
-          <Month model={model} month={month} category={route.category} categories={categories} catOf={catOf} onAssign={assign} onNewCategory={addCategory} />
+          <Month model={model} month={month} category={route.category} categories={categories} catOf={catOf} onAssign={assign} onAssignOne={assignOne} onNewCategory={addCategory} />
         ) : (
-          <Home model={model} config={config} catOf={catOf} order={order} selected={route.page === 'home' ? route.cats.filter((c) => order.includes(c)) : []} top={route.page === 'home' && route.top} setConfig={setConfig} />
+          <Home model={model} config={config} catOf={catOf} order={order} selected={route.page === 'home' ? route.cats.filter((c) => order.includes(c)) : []} top={route.page === 'home' ? route.top : null} setConfig={setConfig} />
         )}
       </main>
     </div>

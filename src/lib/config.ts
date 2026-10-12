@@ -18,6 +18,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'insurance', name: 'Insurance', color: '#6b7a90' },
   { id: 'transfers', name: 'Transfers', color: '#9aa0a6' },
   { id: 'other', name: 'Other', color: '#a58e7a' },
+  { id: 'excluded', name: 'Excluded', color: '#cfcfca', excluded: true },
 ]
 
 const baseConfig = (): Config => ({
@@ -25,6 +26,7 @@ const baseConfig = (): Config => ({
   monthBasis: 'billing',
   categories: DEFAULT_CATEGORIES,
   rules: [],
+  transactionOverrides: [],
   manual: [],
   income: [],
   assets: [],

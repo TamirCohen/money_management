@@ -8,7 +8,8 @@ const devData = (): Plugin => ({
   name: 'dev-data',
   apply: 'serve',
   configureServer(server) {
-    const dir = resolve(__dirname, 'data')
+    // DEV_DATA_DIR lets you point ?dev at another folder (e.g. a copy of your real one)
+    const dir = process.env.DEV_DATA_DIR ? resolve(process.env.DEV_DATA_DIR) : resolve(__dirname, 'data')
     const configPath = resolve(dir, 'expenses.config.json')
     server.middlewares.use('/__dev/config', (req, res) => {
       if (req.method === 'PUT') {

@@ -5,16 +5,22 @@ export const UNCATEGORIZED: Category = { id: 'uncategorized', name: 'Uncategoriz
 export const merchantKey = (merchant: string) => merchant.toLowerCase().replace(/\s+/g, ' ').trim()
 
 export const slug = (name: string) =>
-  merchantKey(name).replace(/[^a-z0-9֐-׿]+/g, '-').replace(/^-|-$/g, '') || `c${Date.now()}`
+  merchantKey(name).replace(/[^a-z0-9\u0590-\u05ff]+/g, '-').replace(/^-|-$/g, '') || `c${Date.now()}`
 
 export interface Match {
   category: string
   rule: Rule | null
+  /** Category was set for this transaction only */
+  override: boolean
+  /** The category is marked as not counted */
+  excluded: boolean
 }
 
 /** Builds the categorize function from the config's rules. Unknown category ids fall back to Uncategorized. */
 export function makeCategorizer(config: Config): (t: Transaction) => Match {
   const known = new Set(config.categories.map((c) => c.id))
+  const excludedIds = new Set(config.categories.filter((c) => c.excluded).map((c) => c.id))
+  const overrides = new Map(config.transactionOverrides.filter((o) => known.has(o.category)).map((o) => [o.id, o.category]))
   const exact = new Map<string, Rule>()
   const ordered: { rule: Rule; test: (key: string) => boolean }[] = []
   for (const rule of config.rules) {
@@ -33,11 +39,14 @@ export function makeCategorizer(config: Config): (t: Transaction) => Match {
       }
     }
   }
+  const done = (category: string, rule: Rule | null, override = false): Match => ({ category, rule, override, excluded: excludedIds.has(category) })
   return (t) => {
-    if (t.presetCategory) return { category: known.has(t.presetCategory) ? t.presetCategory : UNCATEGORIZED.id, rule: null }
+    if (t.presetCategory) return done(known.has(t.presetCategory) ? t.presetCategory : UNCATEGORIZED.id, null)
+    const own = overrides.get(t.id)
+    if (own) return done(own, null, true)
     const key = merchantKey(t.merchant)
     const hit = exact.get(key) ?? ordered.find((o) => o.test(key))?.rule
-    return hit ? { category: hit.category, rule: hit } : { category: UNCATEGORIZED.id, rule: null }
+    return hit ? done(hit.category, hit) : done(UNCATEGORIZED.id, null)
   }
 }
 

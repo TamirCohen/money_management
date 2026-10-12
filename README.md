@@ -42,6 +42,6 @@ code must never contain personal data; all of that lives in your folder.
 
 - `src/lib/parsers/` - one parser per provider, all producing the same `Transaction`. Add Max/Cal/bank here.
 - `src/lib/categories.ts` - rule matching. `src/lib/config.ts` - default categories/rules, file format.
-- `src/lib/analytics.ts` - monthly totals, recurring detection, trips, outliers.
+- `src/lib/analytics.ts` - monthly totals, recurring detection, outliers.
 - `src/lib/storage.ts` (local folder, dev) and `src/lib/drive.ts` (Google Drive) - data sources.
 - `scripts/check.ts` - `node scripts/check.ts data/*.xlsx` to sanity-check parsing.

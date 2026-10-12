@@ -1,9 +1,8 @@
-import { Fragment, useState } from 'react'
-import { Bar, BarChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { placeOf, type Model } from '../lib/analytics.ts'
+import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import type { Model } from '../lib/analytics.ts'
 import { href } from '../lib/route.ts'
 import type { Category, Config } from '../lib/types.ts'
-import { Dot, Icon, Stat, dayLabel, ils, kTick, monthLong, monthShort, pct } from './ui.tsx'
+import { Dot, Icon, Stat, ils, kTick, monthLong, monthShort } from './ui.tsx'
 
 interface Props {
   model: Model
@@ -13,27 +12,29 @@ interface Props {
   order: string[]
   /** Categories picked above the chart (from the URL); empty = total spending */
   selected: string[]
-  /** Each month split into its 5 biggest categories + the rest */
-  top: boolean
+  /** Each month split into its N biggest categories + the rest (null = off) */
+  top: number | null
   setConfig: (fn: (c: Config) => Config) => void
 }
 
 const go = (h: string) => (location.hash = h)
-const TOP_N = 5
+const TOP_DEFAULT = 5
 const REST = '__rest'
 
 type Row = { month: string; total: number } & Record<string, number | string>
 
-function MonthTip({ active, payload, label, names }: { active?: boolean; payload?: { dataKey: string; value: number; color: string; payload: Row }[]; label?: string; names: (id: string) => string }) {
+function MonthTip({ active, payload, label, names, colors }: { active?: boolean; payload?: { payload: Row }[]; label?: string; names: (id: string) => string; colors: (id: string) => string }) {
   if (!active || !payload?.length || !label) return null
-  const parts = payload.filter((p) => p.dataKey !== 'total')
+  const row = payload[0].payload
+  // Same order as the bar, top segment first
+  const parts = Object.keys(row).filter((k) => /^s\d+$/.test(k)).sort((a, b) => +b.slice(1) - +a.slice(1)).map((k) => ({ id: String(row[`${k}id`]), value: Number(row[k]) })).filter((p) => p.value > 0)
   return (
     <div className="tip">
       <div className="tip-title">{monthLong(label)}</div>
-      <b>{ils(payload[0].payload.total)}</b>
-      {[...parts].sort((a, b) => b.value - a.value).filter((p) => p.value > 0).map((p) => (
-        <div key={p.dataKey} className="tip-row">
-          <Dot color={p.color} /> {names(p.dataKey)} <span className="tip-val">{ils(p.value)}</span>
+      <b>{ils(row.total)}</b>
+      {parts.map((p) => (
+        <div key={p.id} className="tip-row">
+          <Dot color={colors(p.id)} /> {names(p.id)} <span className="tip-val">{ils(p.value)}</span>
         </div>
       ))}
     </div>
@@ -42,7 +43,6 @@ function MonthTip({ active, payload, label, names }: { active?: boolean; payload
 
 export function Home({ model, config, catOf, order, selected, top, setConfig }: Props) {
   const { months, totals, income, byCategory } = model
-  const [openTrip, setOpenTrip] = useState<string | null>(null)
   const avgAll = months.reduce((s, m) => s + totals[m], 0) / Math.max(1, months.length)
   const recurringMonthly = model.recurring.reduce((s, r) => s + r.monthly, 0)
   const withIncome = months.filter((m) => income[m] > 0)
@@ -51,17 +51,26 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
   const netWorth = config.assets.reduce((s, a) => s + a.value, 0)
 
   // Top mode: each month keeps its own 5 biggest categories; the rest is one grey segment
-  const topOf = (m: string) => Object.entries(byCategory[m]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, TOP_N).map(([id]) => id)
+  const topOf = (m: string) => Object.entries(byCategory[m]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, top ?? TOP_DEFAULT).map(([id]) => id)
   const topUnion = top ? order.filter((id) => months.some((m) => topOf(m).includes(id))) : []
-  // Selected categories stack bottom-up in the same order as the chips (largest first)
   const picked = top ? topUnion : order.filter((id) => selected.includes(id))
   const value = (m: string) => (picked.length && !top ? picked.reduce((s, id) => s + Math.max(0, byCategory[m][id] ?? 0), 0) : totals[m])
+  // Each month stacks its own segments biggest-first from the bottom, "Everything else" included.
+  // Bars are positional slots s0, s1, … and each row records which category sits in each slot.
   const data: Row[] = months.map((m) => {
     const keep = top ? topOf(m) : picked
-    const parts = Object.fromEntries(picked.map((id) => [id, keep.includes(id) ? Math.max(0, byCategory[m][id] ?? 0) : 0]))
-    const rest = top ? totals[m] - Object.values(parts).reduce((s, v) => s + v, 0) : 0
-    return { month: m, total: value(m), ...parts, ...(top ? { [REST]: Math.max(0, rest) } : {}) }
+    const parts = keep.map((id) => ({ id, v: Math.max(0, byCategory[m][id] ?? 0) })).filter((p) => p.v > 0)
+    if (top) parts.push({ id: REST, v: Math.max(0, totals[m] - parts.reduce((s, p) => s + p.v, 0)) })
+    parts.sort((a, b) => b.v - a.v)
+    const row: Row = { month: m, total: value(m) }
+    parts.forEach((p, j) => {
+      row[`s${j}`] = p.v
+      row[`s${j}id`] = p.id
+    })
+    row.topSlot = parts.length - 1
+    return row
   })
+  const slots = Math.max(0, ...data.map((r) => Number(r.topSlot) + 1))
   const series = top ? [...picked, REST] : picked
   const colorOf = (id: string) => (id === REST ? 'var(--rest)' : catOf(id).color)
   const nameOf = (id: string) => (id === REST ? 'Everything else' : catOf(id).name)
@@ -82,7 +91,15 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
       <section className="card">
         <div className="chips">
           <button className={`chip ${picked.length ? '' : 'on'}`} onClick={() => go(href.home())}>All</button>
-          <button className={`chip ${top ? 'on' : ''}`} onClick={() => go(top ? href.home() : href.top())}>Top {TOP_N}</button>
+          {top ? (
+            <span className="chip on stepper">
+              <button className="step" onClick={() => go(href.top(Math.max(1, top - 1)))} disabled={top <= 1} aria-label="Fewer">−</button>
+              <button className="step-label" onClick={() => go(href.home())} title="Turn off">Top {top}</button>
+              <button className="step" onClick={() => go(href.top(Math.min(10, top + 1)))} disabled={top >= 10} aria-label="More">+</button>
+            </span>
+          ) : (
+            <button className="chip" onClick={() => go(href.top(TOP_DEFAULT))}>Top {TOP_DEFAULT}</button>
+          )}
           <span className="chip-sep" />
           {order.map((id) => (
             <button key={id} className={`chip ${!top && picked.includes(id) ? 'on' : ''} ${top && !picked.includes(id) ? 'dim' : ''}`} onClick={() => toggle(id)}>
@@ -94,29 +111,21 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
           <BarChart key={series.join(',')} data={data} barCategoryGap="28%" margin={{ top: 8, right: 4, left: 4, bottom: 0 }} onClick={(e) => e?.activeLabel && openMonth(String(e.activeLabel))}>
             <XAxis dataKey="month" tickFormatter={monthShort} axisLine={false} tickLine={false} tick={{ fill: 'var(--text-3)', fontSize: 12 }} />
             <YAxis tickFormatter={kTick} axisLine={false} tickLine={false} width={36} tick={{ fill: 'var(--text-3)', fontSize: 12 }} />
-            <Tooltip content={<MonthTip names={nameOf} />} cursor={{ fill: 'var(--hover)' }} />
+            <Tooltip content={<MonthTip names={nameOf} colors={colorOf} />} cursor={{ fill: 'var(--hover)' }} />
             <ReferenceLine y={avg} stroke="var(--text-3)" strokeDasharray="3 4" />
             {picked.length === 0 ? (
               <Bar dataKey="total" fill="var(--series-1)" radius={[4, 4, 0, 0]} cursor="pointer" />
             ) : (
-              series.map((id, j) => (
-                <Bar key={id} dataKey={id} stackId="s" fill={colorOf(id)} stroke="var(--surface)" strokeWidth={j < series.length - 1 ? 1 : 0} radius={j === series.length - 1 ? [4, 4, 0, 0] : 0} cursor="pointer" isAnimationActive={false} />
+              Array.from({ length: slots }, (_, j) => (
+                <Bar key={j} dataKey={`s${j}`} stackId="s" stroke="var(--surface)" strokeWidth={1} cursor="pointer" isAnimationActive={false}>
+                  {data.map((r) => (
+                    <Cell key={r.month} fill={r[`s${j}id`] ? colorOf(String(r[`s${j}id`])) : 'transparent'} radius={j === r.topSlot ? ([4, 4, 0, 0] as unknown as number) : 0} />
+                  ))}
+                </Bar>
               ))
             )}
           </BarChart>
         </ResponsiveContainer>
-        <table className="table rows">
-          <tbody>
-            {[...months].reverse().map((m) => (
-              <tr key={m} className="click" onClick={() => openMonth(m)}>
-                <td>{monthLong(m)}</td>
-                <td className={`num small ${value(m) > avg ? 'bad' : 'good'}`}>{avg ? pct((value(m) - avg) / avg) : ''}</td>
-                <td className="num strong">{ils(value(m))}</td>
-                <td className="chev">{Icon.next}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </section>
 
       {model.recurring.length > 0 && (
@@ -147,34 +156,6 @@ export function Home({ model, config, catOf, order, selected, top, setConfig }: 
         </section>
       )}
 
-      {model.trips.length > 0 && (
-        <section className="card">
-          <h3>Trips</h3>
-          <table className="table">
-            <tbody>
-              {model.trips.map((t) => (
-                <Fragment key={t.id}>
-                  <tr className="click" onClick={() => setOpenTrip(openTrip === t.id ? null : t.id)}>
-                    <td className="strong">{placeOf(t.currency)}</td>
-                    <td className="muted">{dayLabel(t.start)} – {dayLabel(t.end)} {t.start.slice(0, 4)}</td>
-                    <td className="muted num">{t.days} days · {ils(t.total / t.days)}/day</td>
-                    <td className="num strong">{ils(t.total)}</td>
-                  </tr>
-                  {openTrip === t.id &&
-                    t.txs.map((x) => (
-                      <tr key={x.id} className="sub">
-                        <td className="muted">{dayLabel(x.date)}</td>
-                        <td className="merchant" dir="auto">{x.merchant}</td>
-                        <td className="muted num">{x.originalCurrency !== '₪' ? `${x.originalAmount.toLocaleString()} ${x.originalCurrency}` : ''}</td>
-                        <td className="num">{ils(x.amount)}</td>
-                      </tr>
-                    ))}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
     </div>
   )
 }
